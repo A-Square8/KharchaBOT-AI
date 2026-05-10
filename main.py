@@ -21,10 +21,14 @@ async def lifespan(app: FastAPI):
         bot_app = Application.builder().token(bot_token).build()
         
         # Add basic /start handler for testing
-        from telegram.ext import CommandHandler
+        from telegram.ext import CommandHandler, MessageHandler, filters
+        from bot.handlers import handle_text_message
+        
         async def start_command(update: Update, context):
-            await update.message.reply_text("Hello, I'm FinPilot AI! 🚀 I'm online and ready.")
+            await update.message.reply_text("Hello, I'm FinPilot AI! I'm online and ready.\nTry saying: 'I spent 500 on dinner'")
+            
         bot_app.add_handler(CommandHandler("start", start_command))
+        bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
         
         await bot_app.initialize()
         await bot_app.start()
