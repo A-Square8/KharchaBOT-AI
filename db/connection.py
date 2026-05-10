@@ -1,6 +1,14 @@
 import ssl
+import socket
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from config.settings import settings
+
+# Force IPv4 DNS resolution (Render free tier does not support IPv6 outbound)
+_original_getaddrinfo = socket.getaddrinfo
+def _ipv4_only_getaddrinfo(*args, **kwargs):
+    responses = _original_getaddrinfo(*args, **kwargs)
+    return [r for r in responses if r[0] == socket.AF_INET] or responses
+socket.getaddrinfo = _ipv4_only_getaddrinfo
 
 # Modify the DATABASE_URL to use asyncpg
 db_url = settings.database_url
@@ -9,7 +17,7 @@ if db_url.startswith("postgres://"):
 elif db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# Force SSL for Supabase and handle Render's IPv6 issues
+# Force SSL for Supabase
 ssl_context = ssl.create_default_context()
 ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_NONE
