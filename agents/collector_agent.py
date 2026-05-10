@@ -7,7 +7,15 @@ logger = structlog.get_logger()
 
 # Configure Gemini
 genai.configure(api_key=settings.gemini_api_key)
-model = genai.GenerativeModel('gemini-1.5-flash')
+
+# The best 5 fast, text-out models based on your limits list
+FALLBACK_MODELS = [
+    'gemini-2.5-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-2.0-flash',
+    'gemini-3-flash-preview',
+    'gemini-flash-latest'
+]
 
 PROMPT_TEMPLATE = """
 You are an expert financial assistant. Extract the transaction details from the user's message.
@@ -23,22 +31,30 @@ User Message: "{user_input}"
 """
 
 async def parse_transaction_text(user_input: str) -> dict | None:
-    """Use Gemini to parse natural language transaction text into a structured dictionary."""
+    """Use Gemini to parse natural language transaction text, with fallback models."""
     prompt = PROMPT_TEMPLATE.format(user_input=user_input)
-    try:
-        response = await model.generate_content_async(prompt)
-        text = response.text.strip()
-        
-        # Clean up possible markdown code blocks from Gemini response
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
+    
+    for model_name in FALLBACK_MODELS:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = await model.generate_content_async(prompt)
+            text = response.text.strip()
             
-        data = json.loads(text.strip())
-        return data
-    except Exception as e:
-        logger.error("Failed to parse transaction text", error=str(e), user_input=user_input)
-        return None
+            # Clean up possible markdown code blocks from Gemini response
+            if text.startswith("```json"):
+                text = text[7:]
+            if text.startswith("```"):
+                text = text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
+                
+            data = json.loads(text.strip())
+            return data
+            
+        except Exception as e:
+            logger.warning(f"Gemini model {model_name} failed. Switching to backup...", error=str(e))
+            continue # Try the next model in the list
+            
+    # If all 5 models fail
+    logger.error("All 5 Gemini fallback models failed", user_input=user_input)
+    return None
