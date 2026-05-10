@@ -24,7 +24,14 @@ async def extract_text_from_photo(photo: PhotoSize, bot) -> str | None:
 
 
 def _preprocess_image(image: Image.Image) -> Image.Image:
-    """Convert to grayscale, boost contrast and sharpness for better OCR accuracy."""
+    """Resize large images, then convert to grayscale, boost contrast and sharpness."""
+    # Cap resolution to prevent OOM on memory-constrained servers (e.g. Render free tier)
+    MAX_WIDTH = 1600
+    if image.width > MAX_WIDTH:
+        ratio = MAX_WIDTH / image.width
+        new_size = (MAX_WIDTH, int(image.height * ratio))
+        image = image.resize(new_size, Image.LANCZOS)
+
     image = image.convert("L")
     image = ImageEnhance.Contrast(image).enhance(2.0)
     image = ImageEnhance.Sharpness(image).enhance(2.0)

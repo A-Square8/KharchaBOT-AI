@@ -19,20 +19,24 @@ FALLBACK_MODELS = [
 
 PROMPT_TEMPLATE = """
 You are an expert financial assistant. Extract the transaction details from the user's message.
-Return ONLY a valid JSON object. Do not include markdown formatting, backticks, or extra text.
+Return ONLY a single valid JSON object. Do not include markdown formatting, backticks, or extra text.
 
 Rules for extraction:
-- amount: (float) the numeric value of the transaction.
+- amount: (float) the final transaction amount. IMPORTANT: If there is a "Total", "Grand Total", or "Amount Paid" in the receipt, use that exact value. Do NOT sum individual items if a total is explicitly stated (to avoid double-counting tax/tips). ONLY sum items if there is no total provided.
 - type: (string) exactly one of ["expense", "income", "emi", "investment"].
 - category: (string) a short 1-2 word category (e.g., "Food", "Transport", "Salary", "Rent", "Groceries", "Car Loan").
-- description: (string) a brief summary of the transaction.
+- description: (string) a brief summary of the transaction. If there are multiple items, combine their names (e.g. "Lassi, Samosa").
+- txn_date: (string) the date of the transaction in "YYYY-MM-DD" format, if explicitly mentioned in the text. If no date is found, omit this field entirely.
+- error: (string) ONLY include this field if the text is completely unrelated to finance (like a random selfie, normal conversation, or garbage text). Example: {"error": "No financial transaction found in this text."}
 
 User Message: "{user_input}"
 """
 
 async def parse_transaction_text(user_input: str) -> dict | None:
     """Use Gemini to parse natural language transaction text, with fallback models."""
-    prompt = PROMPT_TEMPLATE.format(user_input=user_input)
+    # Use string concatenation instead of .format() to prevent KeyError
+    # if user input contains curly braces (e.g. JSON text, code, etc.)
+    prompt = PROMPT_TEMPLATE + f'\nUser Message: "{user_input}"'
     
     for model_name in FALLBACK_MODELS:
         try:

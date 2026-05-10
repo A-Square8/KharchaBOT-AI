@@ -38,12 +38,18 @@ async def cmd_log(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     data = {"amount": amount, "type": "expense", "category": category, "description": description}
 
     async with async_session() as session:
-        user = await get_or_create_user(session, update.message.from_user.id, update.message.from_user.first_name)
-        txn = await add_transaction(session, user.id, data, raw_input=update.message.text, source="manual")
+        try:
+            user = await get_or_create_user(session, update.message.from_user.id, update.message.from_user.first_name)
+            txn = await add_transaction(session, user.id, data, raw_input=update.message.text, source="manual")
+        except Exception as e:
+            logger.error("cmd_log db error", error=str(e))
+            await update.message.reply_text("Failed to save transaction. Please try again.")
+            return
 
     await update.message.reply_text(
         f"Transaction Logged!\n"
-        f"Amount: \u20b9{txn.amount}\n"
+        f"Date: {txn.txn_date}\n"
+        f"Amount: \u20b9{float(txn.amount):,.2f}\n"
         f"Category: {txn.category}\n"
         f"Note: {txn.description}\n"
         f"Type: Expense"
@@ -82,12 +88,18 @@ async def cmd_emi(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     data = {"amount": amount, "type": "emi", "category": "EMI", "description": description}
 
     async with async_session() as session:
-        user = await get_or_create_user(session, update.message.from_user.id, update.message.from_user.first_name)
-        txn = await add_transaction(session, user.id, data, raw_input=update.message.text, source="manual")
+        try:
+            user = await get_or_create_user(session, update.message.from_user.id, update.message.from_user.first_name)
+            txn = await add_transaction(session, user.id, data, raw_input=update.message.text, source="manual")
+        except Exception as e:
+            logger.error("cmd_emi db error", error=str(e))
+            await update.message.reply_text("Failed to save EMI. Please try again.")
+            return
 
     await update.message.reply_text(
         f"EMI Logged!\n"
-        f"Amount: \u20b9{txn.amount}\n"
+        f"Date: {txn.txn_date}\n"
+        f"Amount: \u20b9{float(txn.amount):,.2f}\n"
         f"Description: {txn.description}"
     )
 
@@ -161,10 +173,10 @@ async def cmd_report(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     total_in = sum(t.amount for t in txns if t.type == "income")
     total_out = sum(t.amount for t in txns if t.type in ("expense", "emi"))
 
-    lines = [f"Report: {start} to {end}", f"Total Income:   \u20b9{total_in:,.2f}", f"Total Expenses: \u20b9{total_out:,.2f}", ""]
+    lines = [f"Report: {start} to {end}", f"Total Income:   \u20b9{float(total_in):,.2f}", f"Total Expenses: \u20b9{float(total_out):,.2f}", ""]
     for t in txns[:15]:
         sign = "+" if t.type == "income" else "-"
-        lines.append(f"{t.txn_date}  {sign}\u20b9{t.amount:<8} {t.category or 'Other'} — {t.description or ''}")
+        lines.append(f"{t.txn_date}  {sign}\u20b9{float(t.amount):<10.2f} {t.category or 'Other'} — {t.description or ''}")
 
     if len(txns) > 15:
         lines.append(f"\n...and {len(txns) - 15} more. Use /export for the full list.")
@@ -190,19 +202,28 @@ async def cmd_compare(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         user = await get_or_create_user(session, update.message.from_user.id, update.message.from_user.first_name)
         txns = await get_transactions_by_date_range(session, user.id, start, end)
 
-    income = sum(t.amount for t in txns if t.type == "income")
-    expenses = sum(t.amount for t in txns if t.type in ("expense", "emi"))
+    income = float(sum(t.amount for t in txns if t.type == "income"))
+    expenses = float(sum(t.amount for t in txns if t.type in ("expense", "emi")))
     net = income - expenses
-    ratio = (expenses / income * 100) if income > 0 else 0
 
-    status = "On track" if ratio <= 80 else ("Warning: high spend" if ratio <= 100 else "Overspent")
+    if income == 0 and expenses == 0:
+        await update.message.reply_text(f"No transactions found for {label}.")
+        return
+
+    if income == 0:
+        status = "No income logged — cannot calculate ratio"
+        ratio_text = "N/A"
+    else:
+        ratio = expenses / income * 100
+        ratio_text = f"{ratio:.1f}% of income"
+        status = "On track" if ratio <= 80 else ("Warning: high spend" if ratio <= 100 else "Overspent")
 
     await update.message.reply_text(
         f"Income vs Expenses ({label})\n"
         f"Income:   \u20b9{income:,.2f}\n"
         f"Expenses: \u20b9{expenses:,.2f}\n"
         f"Net:      \u20b9{net:,.2f}\n"
-        f"Spend ratio: {ratio:.1f}% of income\n"
+        f"Spend ratio: {ratio_text}\n"
         f"Status: {status}"
     )
 
@@ -248,6 +269,6 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     lines = ["Last 10 Transactions:"]
     for t in txns:
         sign = "+" if t.type == "income" else "-"
-        lines.append(f"{t.txn_date}  {sign}\u20b9{t.amount:<8} {t.category or 'Other'} — {t.description or ''}")
+        lines.append(f"{t.txn_date}  {sign}\u20b9{float(t.amount):<10.2f} {t.category or 'Other'} — {t.description or ''}")
 
     await update.message.reply_text("\n".join(lines))

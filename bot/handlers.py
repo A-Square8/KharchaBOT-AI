@@ -14,6 +14,13 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_msg = update.message.text
     telegram_user = update.message.from_user
 
+    # Ignore extremely short messages that can't be a transaction
+    if not user_msg or len(user_msg.strip()) < 4:
+        await update.message.reply_text(
+            "Message too short. Try something like: 'spent 150 on groceries'"
+        )
+        return
+
     # Let user know we are processing
     processing_msg = await update.message.reply_text("Processing your transaction...")
 
@@ -27,6 +34,10 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if not parsed_data:
         await processing_msg.edit_text("Sorry, I couldn't understand the transaction details. Please try rephrasing.")
+        return
+
+    if "error" in parsed_data:
+        await processing_msg.edit_text(f"Notice: {parsed_data['error']}")
         return
 
     # Step 2: Save to database
@@ -45,15 +56,14 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 source="manual"
             )
 
-            # Format reply
             reply = (
                 f"Transaction Logged!\n"
-                f"Amount: \u20b9{txn.amount}\n"
+                f"Date: {txn.txn_date}\n"
+                f"Amount: \u20b9{float(txn.amount):,.2f}\n"
                 f"Category: {txn.category}\n"
                 f"Note: {txn.description}\n"
                 f"Type: {txn.type.capitalize()}"
             )
-
             await processing_msg.edit_text(reply)
 
     except Exception as e:
@@ -97,6 +107,10 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return
 
+    if "error" in parsed_data:
+        await processing_msg.edit_text(f"Notice: {parsed_data['error']}")
+        return
+
     # Step 3: Save to database
     try:
         async with async_session() as session:
@@ -115,6 +129,7 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
         reply = (
             f"Receipt Scanned and Logged!\n"
+            f"Date: {txn.txn_date}\n"
             f"Amount: \u20b9{txn.amount}\n"
             f"Category: {txn.category}\n"
             f"Note: {txn.description}\n"

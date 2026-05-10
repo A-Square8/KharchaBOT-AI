@@ -39,6 +39,13 @@ async def add_transaction(
         raw_input=raw_input,
         source=source,
     )
+    
+    if "txn_date" in data and data["txn_date"]:
+        try:
+            txn.txn_date = date.fromisoformat(data["txn_date"])
+        except ValueError:
+            pass # fallback to today's date if parsing fails
+            
     session.add(txn)
     await session.commit()
     await session.refresh(txn)
