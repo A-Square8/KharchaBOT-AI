@@ -1,0 +1,61 @@
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Planning & Non-Production
+non_production/
+instructions/
+free-claude-code/
+
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+*.xml
+
+# Vector Store (local ChromaDB data)
+chroma_data/
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.dockerignore
+
+# Temp / uploads
+uploads/
+tmp/
+
+
+.claude
+
