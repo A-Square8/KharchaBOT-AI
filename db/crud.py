@@ -2,6 +2,7 @@ from datetime import date
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from db.models import User, Transaction
+from vector_store.chroma_client import embed_transaction
 import structlog
 
 logger = structlog.get_logger()
@@ -50,6 +51,10 @@ async def add_transaction(
     await session.commit()
     await session.refresh(txn)
     logger.info("Transaction added", user_id=user_id, amount=txn.amount, type=txn.type)
+    
+    # Auto-embed into Vector Store
+    embed_transaction(txn)
+    
     return txn
 
 
@@ -143,5 +148,15 @@ async def get_recent_history(
         .where(Transaction.user_id == user_id)
         .order_by(Transaction.txn_date.desc(), Transaction.created_at.desc())
         .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def get_all_transactions(session: AsyncSession, user_id: int) -> list[Transaction]:
+    """Return all transactions for a user (used for ChromaDB backfill)."""
+    result = await session.execute(
+        select(Transaction)
+        .where(Transaction.user_id == user_id)
+        .order_by(Transaction.txn_date.asc())
     )
     return list(result.scalars().all())

@@ -11,7 +11,9 @@ from db.crud import (
     get_monthly_summary,
     get_emi_transactions,
     get_recent_history,
+    get_all_transactions,
 )
+from vector_store.chroma_client import search_transactions, embed_transaction
 import structlog
 
 logger = structlog.get_logger()
@@ -272,3 +274,65 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         lines.append(f"{t.txn_date}  {sign}\u20b9{float(t.amount):<10.2f} {t.category or 'Other'} — {t.description or ''}")
 
     await update.message.reply_text("\n".join(lines))
+
+
+async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /search <query> — semantic search over history."""
+    query = " ".join(context.args) if context.args else ""
+    if not query:
+        await update.message.reply_text("Usage: /search <your query>\nExample: /search food i bought last week")
+        return
+
+    processing_msg = await update.message.reply_text("Searching your memory vault...")
+
+    async with async_session() as session:
+        user = await get_or_create_user(session, update.message.from_user.id, update.message.from_user.first_name)
+        
+    results = search_transactions(user.id, query, n_results=5)
+    
+    if not results:
+        await processing_msg.edit_text("No relevant transactions found for your search.")
+        return
+        
+    lines = [f"Search results for: '{query}'\n"]
+    for i, doc in enumerate(results, 1):
+        lines.append(f"{i}. {doc}")
+        
+    await processing_msg.edit_text("\n\n".join(lines))
+
+
+async def cmd_backfill(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /backfill — one-time admin tool to embed all existing DB transactions to ChromaDB."""
+    processing_msg = await update.message.reply_text("Starting vector embedding backfill...")
+    
+    async with async_session() as session:
+        user = await get_or_create_user(session, update.message.from_user.id, update.message.from_user.first_name)
+        txns = await get_all_transactions(session, user.id)
+        
+    if not txns:
+        await processing_msg.edit_text("No transactions found to backfill.")
+        return
+        
+    success = 0
+    failed = 0
+    last_error = ""
+    for txn in txns:
+        try:
+            embed_transaction(txn)
+            success += 1
+        except Exception as e:
+            failed += 1
+            last_error = str(e)
+    
+    if failed == 0:
+        await processing_msg.edit_text(
+            f"Backfill complete! Embedded {success}/{len(txns)} transactions into your vector memory."
+        )
+    else:
+        await processing_msg.edit_text(
+            f"Backfill finished with errors.\n"
+            f"Success: {success}/{len(txns)}\n"
+            f"Failed: {failed}\n"
+            f"Last error: {last_error[:200]}"
+        )
+

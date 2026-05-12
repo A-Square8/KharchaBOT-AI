@@ -1,4 +1,5 @@
 import sys
+import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from config.settings import settings
@@ -11,6 +12,8 @@ from bot.commands import (
     cmd_compare,
     cmd_export,
     cmd_history,
+    cmd_search,
+    cmd_backfill,
 )
 
 
@@ -37,7 +40,9 @@ def main():
             "/report <start> <end> — custom date range\n"
             "/compare — income vs expenses\n"
             "/export — download CSV\n"
-            "/history — last 10 transactions"
+            "/history — last 10 transactions\n"
+            "/search <query> — search transaction history\n"
+            "/backfill — backfill existing entries into vector memory"
         )
 
     # Register handlers
@@ -49,6 +54,8 @@ def main():
     bot_app.add_handler(CommandHandler("compare", cmd_compare))
     bot_app.add_handler(CommandHandler("export", cmd_export))
     bot_app.add_handler(CommandHandler("history", cmd_history))
+    bot_app.add_handler(CommandHandler("search", cmd_search))
+    bot_app.add_handler(CommandHandler("backfill", cmd_backfill))
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
     bot_app.add_handler(MessageHandler(filters.Document.PDF, handle_pdf_message))
     bot_app.add_handler(
@@ -60,8 +67,29 @@ def main():
         await bot_app.bot.delete_webhook()
         print("Telegram Webhook cleared successfully.")
 
+    # Re-set webhook back to Render on shutdown so production bot resumes
+    async def restore_webhook_on_shutdown(app):
+        webhook_url = settings.telegram_webhook_url
+        if webhook_url:
+            full_url = f"{webhook_url}/webhook/{bot_token}"
+            try:
+                resp = requests.get(
+                    f"https://api.telegram.org/bot{bot_token}/setWebhook?url={full_url}",
+                    timeout=10
+                )
+                data = resp.json()
+                if data.get("ok"):
+                    print(f"\nWebhook restored to Render: {webhook_url}")
+                else:
+                    print(f"\nFailed to restore webhook: {data}")
+            except Exception as e:
+                print(f"\nFailed to restore webhook: {e}")
+        else:
+            print("\nNo TELEGRAM_WEBHOOK_URL set, skipping webhook restore.")
+
     # Initialize the app and delete webhook before polling starts
     bot_app.post_init = lambda app: delete_webhook_and_start()
+    bot_app.post_shutdown = restore_webhook_on_shutdown
 
     print("Starting bot polling. Send messages in Telegram to test!")
     print("Press Ctrl+C to stop.")

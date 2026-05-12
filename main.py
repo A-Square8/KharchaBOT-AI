@@ -26,6 +26,7 @@ async def lifespan(app: FastAPI):
         from bot.commands import (
             cmd_log, cmd_emi, cmd_summary,
             cmd_report, cmd_compare, cmd_export, cmd_history,
+            cmd_search, cmd_backfill,
         )
 
         async def start_command(update: Update, context):
@@ -39,7 +40,9 @@ async def lifespan(app: FastAPI):
                 "/report <start> <end> — custom date range\n"
                 "/compare — income vs expenses\n"
                 "/export — download CSV\n"
-                "/history — last 10 transactions"
+                "/history — last 10 transactions\n"
+                "/search <query> — search transaction history\n"
+                "/backfill — backfill existing entries into vector memory"
             )
 
         bot_app.add_handler(CommandHandler("start", start_command))
@@ -50,6 +53,8 @@ async def lifespan(app: FastAPI):
         bot_app.add_handler(CommandHandler("compare", cmd_compare))
         bot_app.add_handler(CommandHandler("export", cmd_export))
         bot_app.add_handler(CommandHandler("history", cmd_history))
+        bot_app.add_handler(CommandHandler("search", cmd_search))
+        bot_app.add_handler(CommandHandler("backfill", cmd_backfill))
         bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo_message))
         bot_app.add_handler(MessageHandler(filters.Document.PDF, handle_pdf_message))
         bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
