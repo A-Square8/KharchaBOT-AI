@@ -217,7 +217,7 @@ python stress_testing/stress_test.py \
 
 ---
 
-## Resume-Ready Metrics
+## Metrics
 
 Based on the above analysis, the following claims are defensible and verifiable:
 
