@@ -8,11 +8,14 @@ import structlog
 
 logger = structlog.get_logger()
 
-# Initialize new google.genai client
 _genai_client = genai.Client(api_key=settings.gemini_api_key)
 
-class CustomGeminiEmbeddingFunction(EmbeddingFunction):
-    """Custom wrapper for Gemini Embeddings using the new google.genai SDK."""
+# Relevance cutoff -- results with distance above this are discarded
+MAX_DISTANCE_THRESHOLD = 1.2
+
+
+class DocumentEmbeddingFunction(EmbeddingFunction):
+    """Embeds documents for storage using RETRIEVAL_DOCUMENT task type."""
     def __call__(self, input: Documents) -> Embeddings:
         result = _genai_client.models.embed_content(
             model="models/gemini-embedding-001",
@@ -21,29 +24,42 @@ class CustomGeminiEmbeddingFunction(EmbeddingFunction):
         )
         return [e.values for e in result.embeddings]
 
-# Initialize ChromaDB client with local persistence
+
+class QueryEmbeddingFunction(EmbeddingFunction):
+    """Embeds search queries using RETRIEVAL_QUERY task type."""
+    def __call__(self, input: Documents) -> Embeddings:
+        result = _genai_client.models.embed_content(
+            model="models/gemini-embedding-001",
+            contents=input,
+            config=genai_types.EmbedContentConfig(task_type="RETRIEVAL_QUERY")
+        )
+        return [e.values for e in result.embeddings]
+
+
 chroma_client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
 
-# Get or create the collection using our custom function
+# Storage collection uses document embedding
 collection = chroma_client.get_or_create_collection(
     name="transactions_memory",
-    embedding_function=CustomGeminiEmbeddingFunction()
+    embedding_function=DocumentEmbeddingFunction()
 )
+
+_query_embedder = QueryEmbeddingFunction()
+
 
 def embed_transaction(txn: Transaction) -> None:
     """Embed a single transaction and store it in ChromaDB."""
     try:
-        # Create a rich natural language document to embed
         doc = (
             f"Transaction ID: {txn.id}. "
             f"Type: {txn.type}. "
             f"Category: {txn.category}. "
-            f"Amount: ₹{txn.amount}. "
+            f"Amount: {txn.amount}. "
             f"Date: {txn.txn_date}. "
             f"Description: {txn.description or 'No description'}. "
             f"Raw Input Context: {txn.raw_input or 'None'}."
         )
-        
+
         collection.add(
             documents=[doc],
             metadatas=[{
@@ -59,19 +75,35 @@ def embed_transaction(txn: Transaction) -> None:
     except Exception as e:
         logger.error("Failed to embed transaction in ChromaDB", error=str(e), txn_id=txn.id)
 
+
 def search_transactions(user_id: int, query: str, n_results: int = 5) -> list[str]:
-    """Search for relevant transactions using semantic query matching."""
+    """Search for relevant transactions using asymmetric query embedding."""
     try:
+        # Embed query with RETRIEVAL_QUERY task type (asymmetric to stored documents)
+        query_embedding = _query_embedder([query])
+
         results = collection.query(
-            query_texts=[query],
+            query_embeddings=query_embedding,
             n_results=n_results,
-            where={"user_id": str(user_id)}
+            where={"user_id": str(user_id)},
+            include=["documents", "distances"]
         )
-        
-        # results["documents"] is a list of lists of documents
-        if results and results.get("documents") and len(results["documents"]) > 0:
-            return results["documents"][0]
-        return []
+
+        if not results or not results.get("documents") or not results["documents"][0]:
+            return []
+
+        docs = results["documents"][0]
+        distances = results["distances"][0]
+
+        # Filter out results beyond the relevance threshold
+        filtered = []
+        for doc, dist in zip(docs, distances):
+            if dist <= MAX_DISTANCE_THRESHOLD:
+                filtered.append(doc)
+            else:
+                logger.debug("Discarded low-relevance result", distance=dist)
+
+        return filtered
     except Exception as e:
         logger.error("Semantic search failed", error=str(e), user_id=user_id)
         return []

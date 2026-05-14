@@ -62,12 +62,14 @@ def main():
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)
     )
 
-    # Deleting webhook first is critical, otherwise Telegram won't allow polling
-    async def delete_webhook_and_start():
-        await bot_app.bot.delete_webhook()
-        print("Telegram Webhook cleared successfully.")
+    async def delete_webhook_and_start(app):
+        import asyncio
+        await bot_app.bot.delete_webhook(drop_pending_updates=True)
+        print("Webhook cleared (attempt 1). Waiting for production race...")
+        await asyncio.sleep(3)
+        await bot_app.bot.delete_webhook(drop_pending_updates=True)
+        print("Webhook cleared (attempt 2). Polling is safe to start.")
 
-    # Re-set webhook back to Render on shutdown so production bot resumes
     async def restore_webhook_on_shutdown(app):
         webhook_url = settings.telegram_webhook_url
         if webhook_url:
@@ -79,7 +81,7 @@ def main():
                 )
                 data = resp.json()
                 if data.get("ok"):
-                    print(f"\nWebhook restored to Render: {webhook_url}")
+                    print(f"\nWebhook restored to production: {webhook_url}")
                 else:
                     print(f"\nFailed to restore webhook: {data}")
             except Exception as e:
@@ -87,15 +89,13 @@ def main():
         else:
             print("\nNo TELEGRAM_WEBHOOK_URL set, skipping webhook restore.")
 
-    # Initialize the app and delete webhook before polling starts
-    bot_app.post_init = lambda app: delete_webhook_and_start()
+    bot_app.post_init = delete_webhook_and_start
     bot_app.post_shutdown = restore_webhook_on_shutdown
 
     print("Starting bot polling. Send messages in Telegram to test!")
     print("Press Ctrl+C to stop.")
 
-    # run_polling handles the event loop and stays active
-    bot_app.run_polling()
+    bot_app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
