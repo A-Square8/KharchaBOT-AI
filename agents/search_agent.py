@@ -210,6 +210,8 @@ Instructions:
 - If the data doesn't fully answer the question, say so and suggest /report or /summary.
 - Do NOT dump raw IDs or internal fields. Present only what's useful.
 - If there are many transactions, summarise — don't list every single one unless asked.
+- Strictly NO EMOJIS in your response.
+- Strictly NO MARKDOWN BOLDING (e.g. do not use **text**). You may use bullet points or plain text.
 """
 
 
@@ -227,7 +229,7 @@ async def synthesize_answer(
     """Phase 4: Generate a natural language answer from transactions + stats."""
     if stats["count"] == 0:
         return (
-            "I couldn't find any transactions matching your search. 🤔\n\n"
+            "I couldn't find any transactions matching your search.\n\n"
             "Tips:\n"
             "• Try different keywords (e.g. /search groceries)\n"
             "• Use /history to see recent transactions\n"
@@ -258,7 +260,7 @@ async def synthesize_answer(
         return answer
 
     # Graceful fallback if all models fail: format stats ourselves
-    lines = [f"📊 Results for: \"{query}\"\n"]
+    lines = [f"Results for: \"{query}\"\n"]
     lines.append(f"Found {stats['count']} transactions totalling ₹{stats['total']:,.2f}")
     lines.append(f"Period: {stats['earliest_date']} to {stats['latest_date']}\n")
     for cat, amount in stats["by_category"].items():

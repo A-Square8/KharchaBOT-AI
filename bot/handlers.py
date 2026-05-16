@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from db.connection import async_session
 from db.crud import get_or_create_user, add_transaction
-from agents.collector_agent import parse_transaction_text, parse_transaction_image
+from agents.collector_agent import parse_transaction_text, parse_transaction_image, parse_document_text_to_transactions
 from tools.pdf import extract_text_from_pdf
 import structlog
 
@@ -16,6 +16,11 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if not user_msg or len(user_msg.strip()) < 4:
         await update.message.reply_text("Message too short. Try something like: 'spent 150 on groceries'")
+        return
+
+    if user_msg.strip().startswith('/'):
+        # If it starts with a slash but wasn't caught by a CommandHandler, it's an unrecognized/malformed command
+        await update.message.reply_text("Unrecognized command. Please check /start for valid commands.")
         return
 
     processing_msg = await update.message.reply_text("Processing your transaction...")
@@ -133,34 +138,54 @@ async def handle_pdf_message(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await processing_msg.edit_text("Parsing PDF data with AI...")
 
     try:
-        parsed_data = await parse_transaction_text(extracted_text)
+        transactions_data = await parse_document_text_to_transactions(extracted_text)
     except Exception as e:
-        logger.error("Gemini PDF parse failed", error=str(e))
+        logger.error("Gemini PDF document parse failed", error=str(e))
         await processing_msg.edit_text(f"[Gemini Error] {str(e)}")
         return
 
-    if not parsed_data:
-        await processing_msg.edit_text("Could not extract transaction details from the text in this PDF.")
-        return
-
-    if "error" in parsed_data:
-        await processing_msg.edit_text(f"Notice: {parsed_data['error']}")
+    if not transactions_data:
+        await processing_msg.edit_text("Could not extract any valid financial transactions from this PDF. Ensure it's a valid credit card statement or salary slip.")
         return
 
     try:
         async with async_session() as session:
             user = await get_or_create_user(session, telegram_id=telegram_user.id, name=telegram_user.first_name)
-            txn = await add_transaction(session, user_id=user.id, data=parsed_data, raw_input=extracted_text[:1000], source="pdf")
+            
+            saved_count = 0
+            total_amount = 0.0
+            
+            for txn_data in transactions_data:
+                try:
+                    txn = await add_transaction(session, user_id=user.id, data=txn_data, raw_input="<pdf_document>", source="pdf")
+                    saved_count += 1
+                    total_amount += float(txn.amount)
+                except Exception as db_err:
+                    logger.error("Failed to save individual PDF transaction", error=str(db_err), data=txn_data)
+                    continue
 
-        reply = (
-            f"PDF Bill Logged!\n"
-            f"Date: {txn.txn_date}\n"
-            f"Amount: \u20b9{txn.amount}\n"
-            f"Category: {txn.category}\n"
-            f"Note: {txn.description}\n"
-            f"Type: {txn.type.capitalize()}\n"
-            f"Source: PDF Extract"
-        )
+        if saved_count == 0:
+            await processing_msg.edit_text("Failed to save the extracted transactions to the database.")
+            return
+
+        if saved_count == 1:
+            reply = (
+                f"PDF Document Logged!\n"
+                f"Date: {transactions_data[0].get('txn_date', 'Unknown')}\n"
+                f"Amount: \u20b9{transactions_data[0].get('amount', 0)}\n"
+                f"Category: {transactions_data[0].get('category', 'Unknown')}\n"
+                f"Type: {transactions_data[0].get('type', 'Unknown').capitalize()}\n"
+                f"Source: PDF Extract"
+            )
+        else:
+            reply = (
+                f"PDF Document Logged!\n"
+                f"Successfully extracted and saved {saved_count} transactions.\n"
+                f"Total Volume: \u20b9{total_amount:,.2f}\n"
+                f"Source: PDF Extract\n"
+                f"(Use /history to view recent entries)"
+            )
+            
         await processing_msg.edit_text(reply)
     except Exception as e:
         logger.error("Database save failed after PDF parse", error=str(e))

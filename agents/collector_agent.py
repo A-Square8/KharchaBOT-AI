@@ -81,3 +81,71 @@ async def _run_gemini_parsing(contents) -> dict | None:
     # If all 5 models fail
     logger.error("All 5 Gemini fallback models failed")
     return None
+
+DOCUMENT_PROMPT_TEMPLATE = """
+You are an expert financial assistant. The user has uploaded a financial document (e.g., Credit Card Statement or Salary Slip).
+Extract the financial details from the document text.
+Return ONLY a valid JSON array of objects (e.g. `[{"amount": ...}, ...]`). Do not include markdown formatting, backticks, or extra text.
+
+Rules for extraction based on document type:
+1. If it is a Salary Slip:
+Extract the net salary (take-home pay) as a single transaction object:
+- amount: (float) net pay amount
+- type: "income"
+- category: "Salary"
+- description: "Salary for <month/year>" or similar brief summary
+- txn_date: the date of the salary slip in "YYYY-MM-DD" format, if available
+
+2. If it is a Credit Card Statement or Bank Statement:
+Extract each individual transaction/expense listed in the statement as a separate object. For each:
+- amount: (float) the transaction amount
+- type: "expense" (or "income" if it is a refund/payment/reversal)
+- category: infer a short 1-2 word category (e.g., "Food", "Transport", "Shopping", "Utility", "Groceries")
+- description: merchant name or brief description of the charge
+- txn_date: transaction date in "YYYY-MM-DD" format, if available
+
+If the document contains no valid financial transactions, return an empty array `[]`.
+
+Document Text:
+"{user_input}"
+"""
+
+async def parse_document_text_to_transactions(document_text: str) -> list[dict] | None:
+    """Use Gemini to parse a long document (like PDF text) into multiple transactions."""
+    prompt = DOCUMENT_PROMPT_TEMPLATE.replace("{user_input}", document_text)
+    
+    for model_name in FALLBACK_MODELS:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = await model.generate_content_async(prompt)
+            text = response.text.strip()
+            
+            # Clean up possible markdown code blocks
+            if text.startswith("```json"):
+                text = text[7:]
+            if text.startswith("```"):
+                text = text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
+                
+            data = json.loads(text.strip())
+            
+            # Ensure it's a list
+            if isinstance(data, dict):
+                # If Gemini mistakenly returned a single dict
+                if "error" in data:
+                    return []
+                data = [data]
+                
+            if not isinstance(data, list):
+                return []
+                
+            return data
+            
+        except Exception as e:
+            logger.warning(f"Gemini document parse model {model_name} failed.", error=str(e))
+            continue
+            
+    logger.error("All Gemini models failed for document parsing")
+    return None
+
