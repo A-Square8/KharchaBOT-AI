@@ -41,47 +41,43 @@ Telegram Bot: @kharchabot_AI_assistant_bot
 
 ```mermaid
 flowchart TD
-    classDef user fill:#2A2A2A,stroke:#666,stroke-width:2px,color:#FFF,rx:10,ry:10
-    classDef router fill:#0D47A1,stroke:#64B5F6,stroke-width:2px,color:#FFF,rx:5,ry:5
-    classDef agent fill:#1B5E20,stroke:#81C784,stroke-width:2px,color:#FFF,rx:5,ry:5
-    classDef process fill:#4A148C,stroke:#BA68C8,stroke-width:2px,color:#FFF,rx:5,ry:5
-    classDef db fill:#E65100,stroke:#FFB74D,stroke-width:2px,color:#FFF,rx:10,ry:10
+    User["Telegram User"] --> Msg["Text Message"]
+    User --> Photo["Receipt Photo"]
+    User --> Doc["PDF Document"]
 
-    User(["👤 Telegram User"]):::user --> Msg["📝 Text Message"]
-    User --> Photo["📸 Receipt Photo"]
-    User --> Doc["📄 PDF Document"]
-
-    Doc -->|"PyMuPDF Text Extract"| Extractor["Data Extraction Engine"]:::process
+    Doc -->|"PyMuPDF Text Extract"| Extractor["Data Extraction Engine"]
     Photo -->|"Gemini Multimodal"| Extractor
 
-    Msg --> Router{"Global Intent Router"}:::router
+    Msg --> Router{"Global Intent Router"}
     Extractor --> Router
 
-    Router -->|Intent: log/expense| Collector["📥 Collector Agent"]:::agent
-    Router -->|Intent: search/query| Search["🔍 Search Agent (Hybrid Retrieval)"]:::agent
-    Router -->|Intent: advice/budget| Advisor["💡 Advisor Agent (Stage 3)"]:::agent
-    Router -->|Intent: stocks/portfolio| Investor["📈 Investor Agent (Future)"]:::agent
+    Router -->|"Intent: log/expense"| Collector["Collector Agent"]
+    Router -->|"Intent: search/query"| Search["Search Agent (Hybrid Retrieval)"]
+    Router -->|"Intent: advice/budget"| Advisor["Advisor Agent (Stage 3)"]
+    Router -->|"Intent: stocks/portfolio"| Investor["Investor Agent (Future)"]
 
-    Collector --> ParseCat{"Parse & Categorize"}:::process
-    ParseCat -->|"Single / Multi Txn"| DBWrite["Write to PostgreSQL"]:::db
-    DBWrite --> AutoEmbed["Auto-Embed to Vector Store"]:::process
-    AutoEmbed --> ChromaDB[("🗄️ ChromaDB")]:::db
+    Collector --> ParseCat{"Parse & Categorize"}
+    ParseCat -->|"Single / Multi Txn"| DBWrite["Write to PostgreSQL"]
+    DBWrite --> AutoEmbed["Auto-Embed to Vector Store"]
+    AutoEmbed --> ChromaDB[("ChromaDB")]
     
-    Search --> IntentClass{"Search Intent Classification"}:::process
-    IntentClass -->|structured| SQLPath["📝 SQL Query (Exact Match)"]:::process
-    IntentClass -->|semantic| VectorPath["🧠 Vector Search (Fuzzy Match)"]:::process
-    SQLPath -->|Empty + has keyword| VectorPath
-    SQLPath --> FetchDB["Fetch Full Transactions"]:::db
-    VectorPath --> FetchChroma["Query Top K Docs"]:::db
+    Search --> IntentClass{"Search Intent Classification"}
+    IntentClass -->|"structured"| SQLPath["SQL Query (Exact Match)"]
+    IntentClass -->|"semantic"| VectorPath["Vector Search (Fuzzy Match)"]
+    
+    SQLPath -->|"0 results + has keyword"| VectorPath
+    SQLPath --> FetchDB["Fetch Full Transactions"]
+    VectorPath --> FetchChroma["Query Top K Docs"]
     FetchChroma --> FetchDB
-    FetchDB --> PythonStats["📊 Python Stats Computation"]:::process
-    PythonStats --> Synthesis["🤖 Gemini Answer Synthesis"]:::process
-    Synthesis --> Output(["Chat Response"]):::user
     
-    Advisor --> BudgetEngine["Budget Analysis"]:::process --> Output
-    Investor --> MarketAPI["External Market API"]:::process --> Output
+    FetchDB --> PythonStats["Python Stats Computation"]
+    PythonStats --> Synthesis["Gemini Answer Synthesis"]
+    Synthesis --> Output["Chat Response"]
     
-    Supabase[("🐘 Supabase PostgreSQL")]:::db
+    Advisor --> BudgetEngine["Budget Analysis"] --> Output
+    Investor --> MarketAPI["External Market API"] --> Output
+    
+    Supabase[("Supabase PostgreSQL")]
     DBWrite -.-> Supabase
     FetchDB -.-> Supabase
 ```
