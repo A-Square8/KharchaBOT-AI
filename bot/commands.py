@@ -14,6 +14,7 @@ from db.crud import (
     get_all_transactions,
 )
 from vector_store.chroma_client import search_transactions, embed_transaction
+from agents.search_agent import synthesize_search_answer
 import structlog
 
 logger = structlog.get_logger()
@@ -277,28 +278,34 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /search <query> — semantic search over history."""
+    """Handle /search <query> — semantic search + AI synthesis over history."""
     query = " ".join(context.args) if context.args else ""
     if not query:
-        await update.message.reply_text("Usage: /search <your query>\nExample: /search food i bought last week")
+        await update.message.reply_text(
+            "Usage: /search <your question>\n"
+            "Examples:\n"
+            "  /search how much did I spend on food last week\n"
+            "  /search show my transport expenses\n"
+            "  /search biggest purchase this month"
+        )
         return
 
-    processing_msg = await update.message.reply_text("Searching your memory vault...")
+    processing_msg = await update.message.reply_text("🔍 Searching your transaction memory...")
 
     async with async_session() as session:
         user = await get_or_create_user(session, update.message.from_user.id, update.message.from_user.first_name)
-        
-    results = search_transactions(user.id, query, n_results=5)
-    
-    if not results:
-        await processing_msg.edit_text("No relevant transactions found for your search.")
-        return
-        
-    lines = [f"Search results for: '{query}'\n"]
-    for i, doc in enumerate(results, 1):
-        lines.append(f"{i}. {doc}")
-        
-    await processing_msg.edit_text("\n\n".join(lines))
+
+    # Retrieve top relevant transactions from ChromaDB
+    results = search_transactions(user.id, query, n_results=8)
+
+    # Synthesize a direct answer using Gemini (RAG)
+    try:
+        answer = await synthesize_search_answer(query, results)
+    except Exception as e:
+        logger.error("Search synthesis failed", error=str(e))
+        answer = "Sorry, I had trouble analysing those results. Please try again."
+
+    await processing_msg.edit_text(answer)
 
 
 async def cmd_backfill(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
