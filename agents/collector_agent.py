@@ -27,6 +27,7 @@ Rules for extraction:
 - category: (string) a short 1-2 word category (e.g., "Food", "Transport", "Salary", "Rent", "Groceries", "Car Loan").
 - description: (string) a brief summary of the transaction. If there are multiple items, combine their names (e.g. "Lassi, Samosa").
 - txn_date: (string) the date of the transaction in "YYYY-MM-DD" format, if explicitly mentioned in the text. If no date is found, omit this field entirely.
+- intent: (string) ONLY include this field and set it to "search" if the user is asking a question or querying their past expenses/history (e.g. "How much did I spend on food?", "Show my recent transactions"). Do not include other fields if intent is "search".
 - error: (string) ONLY include this field if the text is completely unrelated to finance (like a random selfie, normal conversation, or garbage text). Example: {"error": "No financial transaction found in this text."}
 
 User Message: "{user_input}"

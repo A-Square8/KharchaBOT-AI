@@ -36,6 +36,23 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await processing_msg.edit_text("Sorry, I couldn't understand the transaction details. Please try rephrasing.")
         return
 
+    # Natural Language Search Routing
+    if parsed_data.get("intent") == "search":
+        await processing_msg.edit_text("🔍 Searching your transaction memory...")
+        try:
+            from agents.search_agent import handle_search_query
+            async with async_session() as session:
+                user = await get_or_create_user(session, telegram_id=telegram_user.id, name=telegram_user.first_name)
+                answer = await handle_search_query(user_msg, user.id, session)
+                
+            if len(answer) > 4090:
+                answer = answer[:4087] + "..."
+            await processing_msg.edit_text(answer)
+        except Exception as e:
+            logger.error("Natural language search pipeline failed", error=str(e))
+            await processing_msg.edit_text("Sorry, something went wrong with the search. Please try again.")
+        return
+
     if "error" in parsed_data:
         await processing_msg.edit_text(f"Notice: {parsed_data['error']}")
         return
