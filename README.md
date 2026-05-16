@@ -33,6 +33,55 @@ Telegram Bot: @kharchabot_AI_assistant_bot
 - Webhook Integration for Render Deployments & Polling Script for Local Development
 
 ## To Be Done
-- ChromaDB integration for semantic search, salary slip and credit card statement PDF parsing (Stage 2)
+- ChromaDB integration for semantic search, salary slip and credit card statement PDF parsing (Stage 2) - **Completed**
 - Advisor Agent with personalized budget rules, expense threshold alerts, and conversational financial advice (Stage 3)
 - Multi-currency support and integration with external exchange rate APIs (Stage 4)
+
+## System Architecture
+
+```mermaid
+flowchart TD
+    classDef user fill:#2A2A2A,stroke:#666,stroke-width:2px,color:#FFF,rx:10,ry:10
+    classDef router fill:#0D47A1,stroke:#64B5F6,stroke-width:2px,color:#FFF,rx:5,ry:5
+    classDef agent fill:#1B5E20,stroke:#81C784,stroke-width:2px,color:#FFF,rx:5,ry:5
+    classDef process fill:#4A148C,stroke:#BA68C8,stroke-width:2px,color:#FFF,rx:5,ry:5
+    classDef db fill:#E65100,stroke:#FFB74D,stroke-width:2px,color:#FFF,rx:10,ry:10
+
+    User(["👤 Telegram User"]):::user --> Msg["📝 Text Message"]
+    User --> Photo["📸 Receipt Photo"]
+    User --> Doc["📄 PDF Document"]
+
+    Doc -->|"PyMuPDF Text Extract"| Extractor["Data Extraction Engine"]:::process
+    Photo -->|"Gemini Multimodal"| Extractor
+
+    Msg --> Router{"Global Intent Router"}:::router
+    Extractor --> Router
+
+    Router -->|Intent: log/expense| Collector["📥 Collector Agent"]:::agent
+    Router -->|Intent: search/query| Search["🔍 Search Agent (Hybrid Retrieval)"]:::agent
+    Router -->|Intent: advice/budget| Advisor["💡 Advisor Agent (Stage 3)"]:::agent
+    Router -->|Intent: stocks/portfolio| Investor["📈 Investor Agent (Future)"]:::agent
+
+    Collector --> ParseCat{"Parse & Categorize"}:::process
+    ParseCat -->|"Single / Multi Txn"| DBWrite["Write to PostgreSQL"]:::db
+    DBWrite --> AutoEmbed["Auto-Embed to Vector Store"]:::process
+    AutoEmbed --> ChromaDB[("🗄️ ChromaDB")]:::db
+    
+    Search --> IntentClass{"Search Intent Classification"}:::process
+    IntentClass -->|structured| SQLPath["📝 SQL Query (Exact Match)"]:::process
+    IntentClass -->|semantic| VectorPath["🧠 Vector Search (Fuzzy Match)"]:::process
+    SQLPath -->|Empty + has keyword| VectorPath
+    SQLPath --> FetchDB["Fetch Full Transactions"]:::db
+    VectorPath --> FetchChroma["Query Top K Docs"]:::db
+    FetchChroma --> FetchDB
+    FetchDB --> PythonStats["📊 Python Stats Computation"]:::process
+    PythonStats --> Synthesis["🤖 Gemini Answer Synthesis"]:::process
+    Synthesis --> Output(["Chat Response"]):::user
+    
+    Advisor --> BudgetEngine["Budget Analysis"]:::process --> Output
+    Investor --> MarketAPI["External Market API"]:::process --> Output
+    
+    Supabase[("🐘 Supabase PostgreSQL")]:::db
+    DBWrite -.-> Supabase
+    FetchDB -.-> Supabase
+```
